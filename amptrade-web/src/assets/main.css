@@ -1,0 +1,484 @@
+@import './bootstrap-theme.scss';
+@import './base.css';
+
+/* Styles that are common to both color schemes */
+* {
+  outline: none;
+}
+
+*:focus {
+  box-shadow: none !important;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+.container {
+  max-width: 100%;
+}
+
+/* For screens wider than 1200px, set the max-width of container to 1200px */
+@media (min-width: 1200px) {
+  .container {
+    max-width: 1200px;
+  }
+}
+
+/* Prevent layout shifts from unknown padding */
+body,
+.modal {
+  padding: 0 !important;
+}
+
+.lead {
+  font-weight: 400;
+}
+
+.Navigation {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.navbar {
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.navbar-nav {
+  gap: 0.5rem;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+  text-wrap: nowrap;
+  cursor: pointer;
+}
+
+.nav-link .nav-icon {
+  font-size: 1.2rem;
+  margin-right: 0.5rem;
+  transition:
+    transform 0.3s ease,
+    color 0.3s ease;
+  color: var(--icon-color, inherit);
+}
+
+.nav-link .nav-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.nav-link:hover .nav-icon {
+  transform: scale(1.1) rotate(15deg);
+}
+
+.nav-link:hover .nav-text {
+  opacity: 1;
+}
+
+.table thead th {
+  font-weight: 600;
+}
+
+.form-check-input:checked {
+  background-color: var(--bs-success);
+  border-color: var(--bs-success);
+}
+
+.dropdown-menu {
+  z-index: 9999;
+  width: 100%;
+}
+
+/* Fix dropdown in tables - position relative to button, not causing scroll */
+.btn-group .dropdown-menu {
+  width: auto;
+  min-width: auto;
+  position: absolute;
+  right: 0;
+  top: 100%;
+}
+
+.btn-group .dropdown-menu.show {
+  display: block;
+}
+
+/* Hover effect styles */
+.hover-effect {
+  transition:
+    transform 0.3s ease-in-out,
+    box-shadow 0.3s ease-in-out;
+}
+
+.hover-effect:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Developer info styles */
+.developer-info {
+  border: 1px solid var(--bs-border-color);
+  transition: all 0.3s ease;
+}
+
+.developer-info:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.developer-link {
+  color: var(--bs-primary);
+  transition: color 0.3s ease;
+}
+
+.developer-link:hover {
+  color: var(--bs-link-hover-color);
+}
+
+/* Heart icon animation */
+.heart-icon {
+  display: inline-block;
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* Card hover effect */
+.card {
+  transition: transform 0.3s ease-in-out;
+}
+
+/* MTM styles */
+.MTM {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+/* TabContent styles */
+.tab-content {
+  height: 500px;
+  overflow: hidden;
+  border-radius: var(--bs-border-radius);
+}
+
+.table-responsive {
+  height: 500px;
+  overflow: scroll;
+  margin: 0.5rem;
+}
+
+.table {
+  border-radius: var(--bs-border-radius);
+  overflow: hidden;
+}
+
+.table > :not(caption) > * > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.nav-tabs {
+  border: none;
+}
+
+/* Sparkle animation */
+@keyframes sparkle {
+  0% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.2) rotate(10deg);
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.sparkle-icon {
+  animation: sparkle 2s infinite;
+}
+
+/* Styles for better visual appeal */
+.card,
+.btn,
+.form-control,
+.input-group-text {
+  transition: all 0.3s ease;
+}
+
+/* Chat container styles */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-messages {
+  flex-grow: 1;
+  max-height: calc(70vh - 100px);
+}
+
+.typing-indicator {
+  display: inline-block;
+  width: 50px;
+}
+
+.typing-indicator span {
+  height: 10px;
+  width: 10px;
+  float: left;
+  margin: 0 1px;
+  background-color: #6c757d;
+  display: block;
+  border-radius: 50%;
+  opacity: 0.4;
+  animation: blink 1s infinite;
+}
+
+.typing-indicator span:nth-of-type(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-of-type(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0% {
+    opacity: 0.4;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.4;
+  }
+}
+
+.user-image {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  margin-bottom: 10px;
+}
+
+/* Navigation and Notification Area Styles */
+.notification-area {
+  border-radius: 20px;
+  padding: 0.5rem 1rem;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  font-size: small;
+}
+
+.notification-icon {
+  font-size: 1.2rem;
+  color: var(--bs-gray-600);
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+}
+
+.notification-icon.has-notification {
+  color: var(--bs-warning);
+  animation: pulse 2s infinite;
+}
+
+.notification-message {
+  color: var(--bs-gray-600);
+  transition: all 0.3s ease;
+  flex-grow: 1;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  min-width: 0;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.1);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.accordion-item {
+  border: none;
+}
+
+.accordion-button:not(.collapsed) {
+  box-shadow: none;
+}
+
+/* Placeholder styles */
+.form-control::placeholder,
+.form-select::placeholder,
+.form-check-input::placeholder {
+  color: var(--bs-gray-600);
+  opacity: 1;
+}
+
+/* For older browsers */
+.form-control::-webkit-input-placeholder,
+.form-select::-webkit-input-placeholder,
+.form-check-input::-webkit-input-placeholder {
+  /* Chrome/Opera/Safari */
+  color: var(--bs-gray-600);
+  opacity: 1;
+}
+
+.form-control::-moz-placeholder,
+.form-select::-moz-placeholder,
+.form-check-input::-moz-placeholder {
+  /* Firefox 19+ */
+  color: var(--bs-gray-600);
+  opacity: 1;
+}
+
+.form-control:-ms-input-placeholder,
+.form-select:-ms-input-placeholder,
+.form-check-input:-ms-input-placeholder {
+  /* IE 10+ */
+  color: var(--bs-gray-600);
+  opacity: 1;
+}
+
+.form-control:-moz-placeholder,
+.form-select:-moz-placeholder,
+.form-check-input:-moz-placeholder {
+  /* Firefox 18- */
+  color: var(--bs-gray-600);
+  opacity: 1;
+}
+
+kbd {
+  background-color: #eee;
+  border-radius: 3px;
+  border: 1px solid #b4b4b4;
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.2),
+    0 2px 0 0 rgba(255, 255, 255, 0.7) inset;
+  color: #333;
+  display: inline-block;
+  font-size: 0.85em;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
+.text-purple {
+  color: var(--bs-purple) !important;
+}
+
+.btn-purple {
+  background-color: var(--bs-purple) !important;
+  color: var(--bs-white) !important;
+}
+
+.btn-outline-purple {
+  border-color: var(--bs-purple) !important;
+  color: var(--bs-purple) !important;
+}
+
+.bg-purple {
+  background-color: var(--bs-purple) !important;
+}
+
+/* Resizable table styles */
+.resizable-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 920px;
+}
+
+.resizable-table th {
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resizable-table td {
+  white-space: nowrap;
+}
+
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  user-select: none;
+  background-color: transparent;
+}
+
+.resize-handle:hover {
+  background-color: #ddd;
+}
+
+/* Prevent text selection while resizing */
+.resizable-table.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.Logo {
+}
+
+.Logo_text {
+  letter-spacing: 0.5px;
+}
+
+.Broker_logo {
+  filter: grayscale(100%);
+  transition: filter 0.3s ease;
+}
+
+.Broker_logo:hover {
+  filter: grayscale(0%);
+}

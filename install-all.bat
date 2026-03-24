@@ -1,30 +1,18 @@
 @echo off
 setlocal enabledelayedexpansion
 
-:: Store the root directory
 set "ROOT_DIR=%cd%"
 
 cls
 echo ================================
 echo    AMPTRADE INSTALLER
 echo ================================
-echo Installing dependencies for all submodules...
+echo Installing dependencies for all projects...
 echo Root directory: %ROOT_DIR%
 echo.
 
-:: Initialize and update submodules first
-echo [1/6] Initializing and updating git submodules...
-git submodule init
-git submodule update --recursive
-if !errorlevel! equ 0 (
-    echo ✓ Git submodules updated
-) else (
-    echo ✗ Failed to update git submodules
-)
-echo.
-
 :: Install amptrade-web dependencies
-echo [2/6] Installing amptrade-web dependencies...
+echo [1/3] Installing amptrade-web dependencies...
 pushd "%ROOT_DIR%\amptrade-web" 2>nul
 if !errorlevel! equ 0 (
     if exist package.json (
@@ -45,7 +33,7 @@ if !errorlevel! equ 0 (
 echo.
 
 :: Install amptrade-api dependencies
-echo [3/6] Installing amptrade-api dependencies...
+echo [2/3] Installing amptrade-api dependencies...
 pushd "%ROOT_DIR%\amptrade-api" 2>nul
 if !errorlevel! equ 0 (
     if exist package.json (
@@ -66,7 +54,7 @@ if !errorlevel! equ 0 (
 echo.
 
 :: Install amptrade-websocket dependencies
-echo [6/6] Installing amptrade-websocket dependencies...
+echo [3/3] Installing amptrade-websocket dependencies...
 pushd "%ROOT_DIR%\amptrade-websocket" 2>nul
 if !errorlevel! equ 0 (
     if exist requirements.txt (
@@ -92,9 +80,9 @@ cd /d "%ROOT_DIR%"
 echo ================================
 echo     INSTALLATION COMPLETE
 echo ================================
-echo All submodule dependencies have been processed.
+echo All dependencies have been processed.
 echo Current directory: %cd%
-echo You can now use start-servers.bat to run all services.
+echo You can now use start-amptrade-dev-servers.bat to run all services.
 echo.
 
 :: Auto-close after 10 seconds or on any key press

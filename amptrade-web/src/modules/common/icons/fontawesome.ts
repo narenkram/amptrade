@@ -76,6 +76,12 @@ import {
   faInbox,
   faCheck,
   faCheckDouble,
+  faArrowTrendUp,
+  faTable,
+  faUsers,
+  faHeartPulse,
+  faFire,
+  faLink,
 } from '@fortawesome/free-solid-svg-icons'
 
 import { faGithub, faTelegram, faYoutube, faGoogle } from '@fortawesome/free-brands-svg-icons'
@@ -160,6 +166,12 @@ library.add(
   faInbox,
   faCheck,
   faCheckDouble,
+  faArrowTrendUp,
+  faTable,
+  faUsers,
+  faHeartPulse,
+  faFire,
+  faLink,
 )
 
 export { FontAwesomeIcon }

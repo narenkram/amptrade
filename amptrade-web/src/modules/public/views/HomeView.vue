@@ -40,6 +40,60 @@
     </div>
   </section>
 
+  <!-- OI Data Promotion Section -->
+  <section class="row py-5 bg-color-2 rounded" id="oidata">
+    <div class="col-12">
+      <h2 class="text-center mb-2">OI Data — Open Interest Analytics</h2>
+      <p class="lead text-center mb-4">
+        Real-time open interest analytics to complement your trading workflow.
+      </p>
+      <div class="row align-items-center">
+        <div class="col-md-7 mb-4 mb-md-0">
+          <div class="row">
+            <div
+              v-for="(stat, index) in oidataStats"
+              :key="index"
+              class="col-6 col-lg-4 mb-3"
+            >
+              <div
+                class="card h-100"
+                :style="{
+                  backgroundColor: `var(--card-bg-${index + 1})`,
+                  borderColor: `var(--card-icon-${index + 1})`,
+                  boxShadow: `0 4px 8px 0 var(--card-bg-${index + 1})`,
+                }"
+              >
+                <div class="card-body text-center">
+                  <FontAwesomeIcon
+                    :icon="stat.icon"
+                    class="fa-2x mb-2"
+                    :style="{ color: `var(--card-icon-${index + 1})` }"
+                  />
+                  <h3 class="card-title h6 mb-0">{{ stat.label }}</h3>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <p class="mb-3">
+            Track live OI changes, spot trending strikes, analyze option chains,
+            and monitor FII/DII activity — all in one place.
+          </p>
+          <a
+            href="https://www.oidata.in"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-primary"
+          >
+            Explore OI Data
+            <FontAwesomeIcon icon="fa-solid fa-arrow-right" class="ms-2" />
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Supported Brokers Section -->
   <section class="row py-5" id="brokers">
     <div class="col-12 text-center">
@@ -324,6 +378,15 @@ const tradingInstruments = [
   'Stock Futures',
   'Stocks Equity',
   'Commodity',
+]
+
+const oidataStats = [
+  { icon: 'fa-solid fa-heart-pulse', label: 'OI Pulse' },
+  { icon: 'fa-solid fa-fire', label: 'Trending OI' },
+  { icon: 'fa-solid fa-link', label: 'Option Chain' },
+  { icon: 'fa-solid fa-chart-bar', label: 'Futures OI' },
+  { icon: 'fa-solid fa-chart-line', label: 'Straddles & Strangles' },
+  { icon: 'fa-solid fa-users', label: 'Market Activity' },
 ]
 
 const scrollToSection = (sectionId: string) => {

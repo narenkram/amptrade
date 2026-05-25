@@ -32,7 +32,7 @@
                 <font-awesome-icon :icon="['fab', 'youtube']" size="lg" />
               </a>
               <a
-                href="https://t.me/narenkram_com"
+                href="https://t.me/oidatachat"
                 target="_blank"
                 rel="noopener noreferrer"
                 class="text-white text-decoration-none hover-white"

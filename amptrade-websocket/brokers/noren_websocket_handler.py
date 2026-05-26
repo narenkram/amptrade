@@ -50,6 +50,36 @@ PRINT_INTERVAL = 5  # Interval in seconds for printing quote data
 CONNECTION_CHECK_INTERVAL = 15  # Interval in seconds to verify connection status
 
 
+class FlattradeNorenApi(NorenApi):
+    """Flattrade-specific NorenApi.
+
+    The installed NorenRestApiPy is the Finvasia/Shoonya build, whose websocket
+    connect frame is:
+        {"t": "c", "uid", "actid", "susertoken": <token>, "source": "API"}
+    Flattrade's websocket instead expects (see flattrade/pythonAPI):
+        {"t": "a", "uid", "actid", "accesstoken": <token>, "source": "API"}
+    Sending the Finvasia frame makes Flattrade close the feed with 1008
+    ("invalid request payload / session token") because the access token arrives
+    under the wrong field and the frame type is unrecognized. The Finvasia frame
+    is correct for the other brokers, so we only override the open handshake here.
+
+    Note: the parent's open handshake is the name-mangled __on_open_callback, so
+    we override the mangled name (_NorenApi__on_open_callback) and reach the
+    parent's private state via its mangled attributes.
+    """
+
+    def _NorenApi__on_open_callback(self, ws=None):
+        self._NorenApi__websocket_connected = True
+        values = {
+            "t": "a",
+            "uid": self._NorenApi__username,
+            "actid": self._NorenApi__username,
+            "accesstoken": self._NorenApi__susertoken,
+            "source": "API",
+        }
+        self._NorenApi__ws_send(json.dumps(values))
+
+
 def create_noren_websocket_server(broker_id: str, config: dict):
     """
     Factory function that creates a WebSocket server for any NorenAPI broker.
@@ -71,22 +101,26 @@ def create_noren_websocket_server(broker_id: str, config: dict):
     # Global variables for this broker instance
     clients = {}  # Store client connections and their associated API instances
     
+    # Flattrade needs a different websocket connect frame than the installed
+    # Finvasia NorenRestApiPy sends (see FlattradeNorenApi above).
+    api_cls = FlattradeNorenApi if broker_id == "flattrade" else NorenApi
+
     def initialize_api():
         """Initialize the API and return the instance"""
         try:
             if eodhost:
-                api_instance = NorenApi(
+                api_instance = api_cls(
                     host=host,
                     websocket=websocket_url,
                     eodhost=eodhost,
                 )
             else:
-                api_instance = NorenApi(
+                api_instance = api_cls(
                     host=host,
                     websocket=websocket_url,
                 )
         except TypeError:
-            api_instance = NorenApi(
+            api_instance = api_cls(
                 host=host,
                 websocket=websocket_url,
             )

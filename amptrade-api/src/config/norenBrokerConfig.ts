@@ -67,7 +67,7 @@ export const NOREN_BROKERS: Record<string, NorenBrokerConfig> = {
         name: "Flattrade",
         id: "flattrade",
         proxyTarget: "https://authapi.flattrade.in",
-        apiHost: "https://piconnect.flattrade.in/PiConnectTP",
+        apiHost: "https://piconnect.flattrade.in/PiConnectAPI",
         queryParamPrefix: "FLATTRADE",
         authType: "oauth",
         authUrl: "https://authapi.flattrade.in/trade/apitoken",

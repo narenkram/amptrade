@@ -237,7 +237,10 @@ export function useMultiBrokerWebSocket() {
     }
 
     const ws = websocketConnections.value.get(broker.type)
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      // Close established AND in-flight sockets. Closing a CONNECTING socket
+      // aborts the handshake so it can't open later as an untracked orphan.
+      // (intentionalDisconnects was set above, so onclose won't auto-reconnect.)
       ws.close()
     }
 
@@ -254,8 +257,14 @@ export function useMultiBrokerWebSocket() {
     )
     intentionalDisconnects.value.delete(broker.type)
 
-    const ws = websocketConnections.value.get(broker.type)
-    if (ws?.readyState === WebSocket.OPEN) {
+    const existing = websocketConnections.value.get(broker.type)
+    if (
+      existing &&
+      (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)
+    ) {
+      // A connection for this broker is already open or in flight. Opening a
+      // second one would create a duplicate upstream feed, which NorenAPI brokers
+      // (e.g. Flattrade) reject with close code 1008 — triggering a reconnect storm.
       return
     }
 
@@ -893,9 +902,9 @@ export function useMultiBrokerWebSocket() {
         intentionalDisconnects.value.add(brokerType)
       }
 
-      // Disconnect all WebSocket connections
+      // Disconnect all WebSocket connections (including in-flight ones)
       for (const [brokerType, ws] of websocketConnections.value.entries()) {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
           console.log(
             `MultiBrokerWebSocket: Closing websocket connection for broker: ${brokerType}`,
           )

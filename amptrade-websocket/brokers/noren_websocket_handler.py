@@ -208,6 +208,26 @@ def create_noren_websocket_server(broker_id: str, config: dict):
 
             clients[websocket]["userid"] = userid
 
+            # Dedup by broker user id. A NorenAPI broker (e.g. Flattrade) permits
+            # only one live feed per user session and drops duplicates with close
+            # code 1008, which the client then auto-reconnects to — producing a
+            # reconnect storm. If this user already has a connection, tear the old
+            # one down (and its upstream feed) before starting the new feed so we
+            # never run two feeds for the same userid.
+            stale_sockets = [
+                ws
+                for ws, cdata in list(clients.items())
+                if ws is not websocket and cdata.get("userid") == userid
+            ]
+            for ws in stale_sockets:
+                logging.info(
+                    f"Replacing stale connection for userid {userid} (id {id(ws)})"
+                )
+                try:
+                    await ws.close(1000, "Replaced by a newer connection")
+                except Exception as e:
+                    logging.error(f"Error closing stale connection for {userid}: {e}")
+                await cleanup_client(ws)
 
             api = initialize_api()
             ret = api.set_session(userid=userid, password="", usertoken=usersession)
@@ -243,26 +263,44 @@ def create_noren_websocket_server(broker_id: str, config: dict):
 
         except Exception as e:
             logging.error(f"Connection error: {e}")
-            await cleanup_client(websocket)
             raise
         finally:
+            # Single cleanup path for all exits (normal close, auth fail, error).
             await cleanup_client(websocket)
 
     async def cleanup_client(websocket):
-        if websocket in clients:
-            client_data = clients[websocket]
-            if client_data.get("print_task"):
-                client_data["print_task"].cancel()
-            if client_data.get("connection_check_task"):
-                client_data["connection_check_task"].cancel()
+        # Pop atomically. cleanup_client can run concurrently for the same socket
+        # (the dedup path closes a stale socket, which also triggers that socket's
+        # own finally -> cleanup_client). Removing the entry BEFORE any await
+        # guarantees exactly one caller runs teardown and no one double-deletes the
+        # key (which previously raised KeyError and crashed the handler).
+        client_data = clients.pop(websocket, None)
+        if client_data is None:
+            return
 
-            if client_data["api"]:
-                if client_data["subscribed_symbols"]:
-                    client_data["api"].unsubscribe(
-                        instrument=list(client_data["subscribed_symbols"]), feed_type=2
-                    )
-                client_data["api"].close_websocket()
-            del clients[websocket]
+        if client_data.get("print_task"):
+            client_data["print_task"].cancel()
+        if client_data.get("connection_check_task"):
+            client_data["connection_check_task"].cancel()
+
+        if client_data["api"]:
+            api = client_data["api"]
+            symbols = list(client_data["subscribed_symbols"])
+
+            # These NorenApi calls are synchronous and blocking — in particular
+            # close_websocket() joins the feed thread (NorenApi.close_websocket).
+            # Running them directly on the event loop stalls the whole server
+            # (new client handshakes can't complete) during teardown churn, so
+            # offload them to a worker thread.
+            def _teardown_api():
+                try:
+                    if symbols:
+                        api.unsubscribe(instrument=symbols, feed_type=2)
+                finally:
+                    api.close_websocket()
+
+            await asyncio.to_thread(_teardown_api)
+
         logging.info(f"Cleaned up client connection {id(websocket)}")
 
     async def handle_websocket_message(websocket, message):
@@ -287,8 +325,10 @@ def create_noren_websocket_server(broker_id: str, config: dict):
                         logging.debug(f"Unsubscribed from {exchange}:{token}")
 
                 if symbols_to_unsubscribe:
-                    client_data["api"].unsubscribe(
-                        instrument=symbols_to_unsubscribe, feed_type=2
+                    await asyncio.to_thread(
+                        client_data["api"].unsubscribe,
+                        instrument=symbols_to_unsubscribe,
+                        feed_type=2,
                     )
 
             elif data["action"] == "subscribe":
@@ -301,8 +341,10 @@ def create_noren_websocket_server(broker_id: str, config: dict):
                         logging.debug(f"Subscribed to {exchange}:{token}")
 
                 if symbols_to_subscribe:
-                    client_data["api"].subscribe(
-                        instrument=symbols_to_subscribe, feed_type=2
+                    await asyncio.to_thread(
+                        client_data["api"].subscribe,
+                        instrument=symbols_to_subscribe,
+                        feed_type=2,
                     )
                     await asyncio.sleep(0.1)
                     while not client_data["quote_queue"].empty():

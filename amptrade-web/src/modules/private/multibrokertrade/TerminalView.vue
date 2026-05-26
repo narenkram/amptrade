@@ -299,7 +299,10 @@ const syncPrimaryConnection = async () => {
     primaryError.value = null
     connectWebSocket(primary)
     for (const broker of selected) {
-      if (broker.id !== primary.id) {
+      // Connections are keyed by broker.type, so only tear down OTHER broker
+      // types. Disconnecting a same-type account (different id) would resolve to
+      // — and kill — the primary's connection we just created above.
+      if (broker.type !== primary.type) {
         disconnectWebSocket(broker)
       }
     }

@@ -21,8 +21,11 @@ from config import (
 NOREN_BROKERS = {
     "flattrade": {
         "name": "Flattrade",
-        "host": "https://piconnect.flattrade.in/PiConnectTP/",
-        "websocket": "wss://piconnect.flattrade.in/PiConnectWSTp/",
+        # Must match Flattrade's current PiConnect endpoints (NorenApi defaults).
+        # The old PiConnectTP / PiConnectWSTp paths are deprecated and get closed
+        # with 1008 / forcibly reset, so the feed never stays up and no LTP flows.
+        "host": "https://piconnect.flattrade.in/PiConnectAPI/",
+        "websocket": "wss://piconnect.flattrade.in/PiConnectWSAPI/",
         "eodhost": "https://web.flattrade.in/chartApi/getdata/",
         "port": FLATTRADE_WS_PORT,
     },

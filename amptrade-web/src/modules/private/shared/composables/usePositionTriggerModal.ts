@@ -64,9 +64,21 @@ export function usePositionTriggerModal<T extends UnifiedPosition>(options: Trig
       const position = selectedPosition.value
       const symbol = position.symbol ?? position.tradingSymbol ?? ''
 
-      await options.updatePosition(symbol, {
-        [type]: value,
-      }, position.broker)
+      // Static and trailing stops are mutually exclusive. Setting one MUST clear
+      // the other, otherwise checkTriggers keeps using the stale trailing value
+      // and the edit is silently ignored.
+      let updates: Record<string, unknown>
+      if (type === 'stopLoss') {
+        updates = { stopLoss: value, trailingStopLoss: null, trailingOffset: null }
+      } else if (type === 'trailingStopLoss') {
+        const ltp = position.lastTradedPrice ?? position.lastPrice ?? 0
+        const offset = value != null && ltp > 0 ? Math.abs(ltp - value) : null
+        updates = { trailingStopLoss: value, trailingOffset: offset, stopLoss: null }
+      } else {
+        updates = { [type]: value }
+      }
+
+      await options.updatePosition(symbol, updates, position.broker)
 
       // Get the correct trigger key based on position type using the utility
       const triggerKey = getTriggerKey(position)
@@ -79,9 +91,7 @@ export function usePositionTriggerModal<T extends UnifiedPosition>(options: Trig
       })
 
       // Update local triggers with standardized key
-      setTriggers(triggerKey, {
-        [type]: value,
-      })
+      setTriggers(triggerKey, updates)
     } catch (error) {
       logger.error(`Failed to save ${type}:`, error)
     }

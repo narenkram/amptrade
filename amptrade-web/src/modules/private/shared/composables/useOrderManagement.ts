@@ -175,12 +175,16 @@ export function useOrderManagement() {
           exch: getExchange(payload.exchange, payload.segment),
           tsym: payload.tradingSymbol,
           qty: payload.quantity.toString(),
+          // For Limit / Limit at LTP / Market Protection the caller already supplies
+          // the final limit price (Market Protection callers pre-compute the
+          // protected price), so use it as-is. Applying protection again here would
+          // double the band and push the limit needlessly far from the LTP.
           prc:
-            payload.orderType === 'Limit' || payload.orderType === 'Limit at LTP'
+            payload.orderType === 'Limit' ||
+            payload.orderType === 'Limit at LTP' ||
+            payload.orderType === 'Market Protection'
               ? payload.price?.toString() || '0'
-              : payload.orderType === 'Market Protection' && payload.price
-                ? calculateProtectedPrice(payload.price, payload.action, payload.tickSize).toString()
-                : '0',
+              : '0',
           prd,
           trantype: getTransType(payload.action),
           prctyp: getPriceType(payload.orderType),

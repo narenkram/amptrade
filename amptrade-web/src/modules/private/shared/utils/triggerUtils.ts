@@ -7,7 +7,16 @@ import {
 } from '@/modules/private/shared/composables/useStoplossTarget'
 import { useTriggerCoordination } from '@/modules/private/shared/composables/useTriggerCoordination'
 import type { Position } from '@/modules/private/shared/types/trade'
+import { STORAGE_KEYS } from '@/modules/private/shared/constants/storage'
 import { calculateProtectedPrice } from '@/modules/utils/marketProtection'
+
+/** Saved trigger state persisted in localStorage, keyed by getTriggerKey(). */
+export interface SavedTrigger {
+  stopLoss?: number | null
+  target?: number | null
+  trailingStopLoss?: number | null
+  trailingOffset?: number | null
+}
 
 /**
  * Minimal subset of a Position-like object needed for trigger enrichment
@@ -20,6 +29,8 @@ export interface BasicPosition {
   lastTradedPrice: number
   stopLoss?: number | null
   target?: number | null
+  trailingStopLoss?: number | null
+  trailingOffset?: number | null
   // Net average price for the current position (from broker's netavgprc)
   netAvgPrice?: number
   // Optional broker info for multi-broker trigger lookup
@@ -37,7 +48,7 @@ export interface BasicPosition {
  */
 export function enrichPositionWithTriggers<T extends BasicPosition>(
   position: T,
-  savedTriggers: Record<string, { stopLoss?: number | null; target?: number | null }>,
+  savedTriggers: Record<string, SavedTrigger>,
 ): T {
   const symbol = position.symbol ?? position.tradingSymbol ?? ''
 
@@ -45,7 +56,7 @@ export function enrichPositionWithTriggers<T extends BasicPosition>(
   // 1. First try with new enhanced key format: brokerName|clientId|symbol|token|productType
   // 2. Then try legacy broker-prefixed key: brokerId|symbol
   // 3. Fall back to plain symbol key (for single-broker)
-  let saved: { stopLoss?: number | null; target?: number | null } = {}
+  let saved: SavedTrigger = {}
 
   if (symbol) {
     // Try new enhanced key format first (using getTriggerKey)
@@ -53,13 +64,13 @@ export function enrichPositionWithTriggers<T extends BasicPosition>(
     saved = savedTriggers[enhancedKey] || {}
 
     // If no triggers found with enhanced key, try legacy broker-prefixed key
-    if (!saved.stopLoss && !saved.target && position.broker?.id) {
+    if (!saved.stopLoss && !saved.target && !saved.trailingStopLoss && position.broker?.id) {
       const legacyBrokerKey = `${position.broker.id}|${symbol}`
       saved = savedTriggers[legacyBrokerKey] || {}
     }
 
     // If still no triggers found, fall back to plain symbol key
-    if (!saved.stopLoss && !saved.target) {
+    if (!saved.stopLoss && !saved.target && !saved.trailingStopLoss) {
       saved = savedTriggers[symbol] || {}
     }
   }
@@ -77,13 +88,20 @@ export function enrichPositionWithTriggers<T extends BasicPosition>(
     ? getInstrumentTarget(symbol)
     : getDefaultTarget()
 
+  // 0) TRAILING STOP-LOSS ----------------------------------------------------
+  // Restore any previously-armed trailing stop (and its offset) so it survives a
+  // position refetch instead of silently reverting to a static/default stop.
+  const trailingStopLoss = saved.trailingStopLoss ?? position.trailingStopLoss ?? null
+  const trailingOffset = saved.trailingOffset ?? position.trailingOffset ?? null
+
   // 1) STOP-LOSS -------------------------------------------------------------
   // Priority: saved value > existing position value > auto-calculate (if enabled and no value exists)
   let stopLoss = saved.stopLoss ?? position.stopLoss
   if (
     stopLoss == null && // not already present from saved or position
+    trailingStopLoss == null && // a trailing stop already covers this position
     position.quantity !== 0 &&
-    localStorage.getItem('steadfast:stoploss_enabled') === 'true'
+    localStorage.getItem(STORAGE_KEYS.TRADE_STOPLOSS_ENABLED) === 'true'
   ) {
     // Use netAvgPrice for SL calculation - this is the actual entry price
     // Falls back to LTP if netAvgPrice not available
@@ -98,7 +116,7 @@ export function enrichPositionWithTriggers<T extends BasicPosition>(
   if (
     target == null &&
     position.quantity !== 0 &&
-    localStorage.getItem('steadfast:target_enabled') === 'true'
+    localStorage.getItem(STORAGE_KEYS.TRADE_TARGET_ENABLED) === 'true'
   ) {
     // Use netAvgPrice for target calculation - this is the actual entry price
     // Falls back to LTP if netAvgPrice not available
@@ -111,6 +129,8 @@ export function enrichPositionWithTriggers<T extends BasicPosition>(
     ...position,
     stopLoss,
     target,
+    trailingStopLoss,
+    trailingOffset,
   }
 
 }
@@ -197,17 +217,22 @@ export function buildTrailingToggleUpdate<P extends {
   trailingStopLoss: number | null
 }>(position: P, ltp: number, defaultOffset: number) {
   if (position.trailingStopLoss == null) {
-    // switch from static -> trailing
+    // switch from static -> trailing. If a static stop already exists, keep both
+    // the level AND the gap the user chose, so the trail distance is preserved
+    // (instead of snapping to the global default on the first favourable tick).
     const initialTSL =
       position.stopLoss != null
         ? position.stopLoss
         : position.quantity > 0
           ? ltp - defaultOffset
           : ltp + defaultOffset
-    return { stopLoss: null, trailingStopLoss: initialTSL }
+    const derivedOffset =
+      position.stopLoss != null && ltp > 0 ? Math.abs(ltp - position.stopLoss) : defaultOffset
+    const trailingOffset = derivedOffset > 0 ? derivedOffset : defaultOffset
+    return { stopLoss: null, trailingStopLoss: initialTSL, trailingOffset }
   }
   // switch from trailing -> static (freeze current TSL)
-  return { trailingStopLoss: null, stopLoss: position.trailingStopLoss }
+  return { trailingStopLoss: null, trailingOffset: null, stopLoss: position.trailingStopLoss }
 }
 
 /**
@@ -361,6 +386,7 @@ export function createQuoteUpdateHandler<T extends {
   quantity: number
   stopLoss?: number | null
   trailingStopLoss?: number | null
+  trailingOffset?: number | null
   target?: number | null
   broker?: { id: string } | string | null
   exchange: string
@@ -370,14 +396,21 @@ export function createQuoteUpdateHandler<T extends {
   positionLtps: { value: Record<string, number> }
   stopLossEnabled: () => boolean
   targetEnabled: () => boolean
-  checkTriggers: (position: T, ltp: number, triggerKey?: string) => Promise<{ type: string; price: number } | null>
+  checkTriggers: (
+    position: T,
+    ltp: number,
+    triggerKey?: string,
+    opts?: { checkStopLoss?: boolean; checkTarget?: boolean },
+  ) => Promise<{ type: string; price: number } | null>
   setTriggers: (key: string, updates: Record<string, unknown>) => void
   updatePosition: (symbol: string, updates: Record<string, unknown>, broker?: { id: string }) => Promise<void>
-  handleClosePosition: (position: T) => Promise<void>
+  // Returns false when the close failed/was a no-op, so the caller can keep the
+  // stop armed instead of permanently marking it as triggered.
+  handleClosePosition: (position: T) => Promise<boolean | void>
   getDefaultStopLoss: () => number
 }) {
   // Initialize trigger coordination - use position-based coordination for better duplicate prevention
-  const { executePositionTrigger, isPositionProcessing } = useTriggerCoordination()
+  const { executePositionTrigger, isPositionProcessing, isProcessing } = useTriggerCoordination()
 
   return async (event: CustomEvent) => {
     const { token, ltp, exchange } = event.detail
@@ -416,13 +449,26 @@ export function createQuoteUpdateHandler<T extends {
             continue
           }
 
+          // Stand down entirely if a global close (e.g. MTM close-all) is in
+          // flight: it will close this position, so don't run our own checks or
+          // place a duplicate exit order that could flip the position.
+          if (isProcessing.value) {
+            continue
+          }
+
+          const stopLossOn = options.stopLossEnabled()
+          const targetOn = options.targetEnabled()
+
           if (
-            (options.stopLossEnabled() && (position.stopLoss || position.trailingStopLoss)) ||
-            (options.targetEnabled() && position.target)
+            (stopLossOn && (position.stopLoss || position.trailingStopLoss)) ||
+            (targetOn && position.target)
           ) {
             // Check if a trigger is hit
             try {
-              const triggerResult = await options.checkTriggers(position, numericLtp, triggerKey)
+              const triggerResult = await options.checkTriggers(position, numericLtp, triggerKey, {
+                checkStopLoss: stopLossOn,
+                checkTarget: targetOn,
+              })
               if (triggerResult) {
                 const symbol = position.symbol ?? position.tradingSymbol ?? ''
 
@@ -436,15 +482,19 @@ export function createQuoteUpdateHandler<T extends {
                     price: triggerResult.price,
                   })
 
-                  // Store which trigger was hit
-                  options.setTriggers(triggerKey, {
-                    lastTrigger: triggerResult.type as 'stopLoss' | 'target',
-                    stopLoss: null,
-                    target: null,
-                  })
-
-                  // Close the position
-                  await options.handleClosePosition(position)
+                  // Close the position first. Only record `lastTrigger` (which
+                  // permanently disarms the stop) once the exit actually succeeds;
+                  // if it fails, leave the stop armed so it retries on the next tick.
+                  const closed = await options.handleClosePosition(position)
+                  if (closed !== false) {
+                    options.setTriggers(triggerKey, {
+                      lastTrigger: triggerResult.type as 'stopLoss' | 'target',
+                      stopLoss: null,
+                      target: null,
+                      trailingStopLoss: null,
+                      trailingOffset: null,
+                    })
+                  }
                 })
               }
             } catch (error) {
@@ -453,11 +503,18 @@ export function createQuoteUpdateHandler<T extends {
 
             // Handle trailing stop loss updates
             if (position.trailingStopLoss !== null && position.trailingStopLoss !== undefined) {
+              // Preserve the configured trail distance instead of always snapping
+              // to the global default offset.
+              const offset =
+                position.trailingOffset != null && position.trailingOffset > 0
+                  ? position.trailingOffset
+                  : options.getDefaultStopLoss()
+
               const newTrailingStopLoss = computeNewTrailingSL(
                 position.quantity,
                 position.trailingStopLoss,
                 numericLtp,
-                options.getDefaultStopLoss(),
+                offset,
               )
 
               if (newTrailingStopLoss !== position.trailingStopLoss) {
@@ -470,9 +527,14 @@ export function createQuoteUpdateHandler<T extends {
 
                 await options.updatePosition(
                   position.symbol ?? position.tradingSymbol ?? '',
-                  { trailingStopLoss: newTrailingStopLoss },
+                  { trailingStopLoss: newTrailingStopLoss, trailingOffset: offset },
                   position.broker as { id: string }
                 )
+                // Persist so the trail survives a position refetch.
+                options.setTriggers(triggerKey, {
+                  trailingStopLoss: newTrailingStopLoss,
+                  trailingOffset: offset,
+                })
               }
             }
           }
@@ -780,6 +842,8 @@ export function createPositionUpdaterFactory<T extends UnifiedPosition>(options:
           updateObj,
           position.broker as { id: string } | null
         )
+        // Persist so the toggle (and trail offset) survives a position refetch.
+        setTriggers(getTriggerKey(position), updateObj)
       } catch (error) {
         console.error('Error toggling trailing stoploss:', error)
       }
@@ -874,7 +938,11 @@ export interface PositionClosingOptions {
 export function createPositionClosingHandler(options: PositionClosingOptions) {
   const { placeOrder, getPositionLtps, setTriggers, getTriggerKey } = options
 
-  return async function closePosition(position: PositionToClose, broker: Record<string, unknown>): Promise<void> {
+  return async function closePosition(
+    position: PositionToClose,
+    broker: Record<string, unknown>,
+    partial = false,
+  ): Promise<void> {
     if (!broker || position.quantity === 0) return
 
     try {
@@ -953,14 +1021,26 @@ export function createPositionClosingHandler(options: PositionClosingOptions) {
         }
       }
 
-      // Update triggers with pending order
-      setTriggers(triggerKey, {
-        stopLoss: null,
-        target: null,
-        lastTrigger: undefined,
-        pendingOrderId: lastOrderId,
-        isClosing: true,
-      })
+      if (partial) {
+        // Partial exit: the position remains open, so re-arm it and KEEP its
+        // stop-loss / target intact (don't null them, don't leave it stuck in
+        // the closing state).
+        setTriggers(triggerKey, {
+          isClosing: false,
+          pendingOrderId: undefined,
+        })
+      } else {
+        // Full close: clear the triggers and record the pending exit order.
+        setTriggers(triggerKey, {
+          stopLoss: null,
+          target: null,
+          trailingStopLoss: null,
+          trailingOffset: null,
+          lastTrigger: undefined,
+          pendingOrderId: lastOrderId,
+          isClosing: true,
+        })
+      }
 
     } catch (error) {
       console.error('Failed to close position:', error)

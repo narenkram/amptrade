@@ -12,6 +12,7 @@ import LimitOrderModal from '@/modules/private/shared/components/LimitOrderModal
 import { useLtp } from '@/modules/private/shared/composables/useLtp'
 import { useShortcutKeys } from '@/modules/private/shared/composables/useShortcutKeys'
 import { useOrders } from '@/modules/private/shared/composables/useOrders'
+import { useTriggerCoordination } from '@/modules/private/shared/composables/useTriggerCoordination'
 import type { Broker } from '@/modules/private/shared/types/broker'
 import { calculateProtectedPrice } from '@/modules/utils/marketProtection'
 
@@ -192,6 +193,9 @@ const getButtonIcon = (action: 'buy' | 'sell', type?: InstrumentType) => {
 
 // Initialize composables based on mode
 const { placeOrder: singlePlaceOrder, closeAllPositions, cancelAllOrders } = useOrderManagement()
+// Shared global lock: held for the full duration of a close-all so per-position
+// stop/target triggers stand down and can't double-close the same position.
+const { isProcessing: globalTriggerLock } = useTriggerCoordination()
 const { allPositions, fetchAllPositions, positionLtps } = useMultiBrokerPositions()
 const { orders, fetchOrders } = useOrders()
 
@@ -285,6 +289,9 @@ const handleMultiBrokerAction = async (action: 'buy' | 'sell' | 'closeAll' | 'ca
       multiLoadingStates.value.closeAll = true
       operationErrors.value.closeAll = []
       completedOperations.value.closeAll = {}
+      // Hold the global trigger lock for the whole close-all so individual
+      // position stop/target triggers don't also fire and double-close.
+      globalTriggerLock.value = true
 
       const promises = selectedBrokers.value.map(async (broker) => {
         try {
@@ -315,6 +322,7 @@ const handleMultiBrokerAction = async (action: 'buy' | 'sell' | 'closeAll' | 'ca
       window.dispatchEvent(new Event('multi-order-closed'))
     } finally {
       multiLoadingStates.value.closeAll = false
+      globalTriggerLock.value = false
     }
   } else if (action === 'cancelOrders') {
     if (multiLoadingStates.value.cancelOrders) return

@@ -17,7 +17,7 @@ import {
 import { getTriggerKey, createQuoteUpdateHandler, getPositionLtp, createPositionUpdaterFactory, createPositionClosingHandler, getTriggerStatus, type UnifiedPosition } from '@/modules/private/shared/utils/triggerUtils'
 import { getOptionType } from '@/modules/private/shared/utils/symbolUtils'
 import { getDefaultStopLoss } from '@/modules/private/shared/composables/useStoplossTarget'
-import { STORAGE_KEYS } from '@/modules/private/shared/constants/storage'
+import { useTriggerSettings } from '@/modules/private/shared/composables/useTriggerSettings'
 import { usePositionMtm } from '@/modules/private/shared/composables/usePositionMtm'
 import { calculateProtectedPrice } from '@/modules/utils/marketProtection'
 
@@ -82,9 +82,8 @@ const calculateUnrealizedPnL = (position: BrokerPosition) => {
   return calculatePositionUnrealizedPnL(position)
 }
 
-// Read stoploss/target enabled state from localStorage
-const stopLossEnabled = computed(() => localStorage.getItem(STORAGE_KEYS.TRADE_STOPLOSS_ENABLED) === 'true')
-const targetEnabled = computed(() => localStorage.getItem(STORAGE_KEYS.TRADE_TARGET_ENABLED) === 'true')
+// Reactive, persisted stoploss/target enable flags (shared with TradeForm).
+const { stopLossEnabled, targetEnabled } = useTriggerSettings()
 
 // Track closing state per position using a Set of position keys
 const closingPositions = ref<Set<string>>(new Set())
@@ -114,8 +113,8 @@ const positionClosingHandler = createPositionClosingHandler({
   getTriggerKey
 })
 
-const handleClosePosition = async (position: BrokerPosition) => {
-  if (!position.broker || position.quantity === 0) return
+const handleClosePosition = async (position: BrokerPosition): Promise<boolean> => {
+  if (!position.broker || position.quantity === 0) return false
 
   const positionKey = getPositionKey(position)
   const symbol = position.symbol
@@ -135,8 +134,12 @@ const handleClosePosition = async (position: BrokerPosition) => {
     }
 
     window.dispatchEvent(new Event('multi-order-placed'))
+    return true
   } catch (error) {
+    // Returning false keeps the stop/target armed so it retries on the next tick
+    // instead of being permanently disarmed by a failed exit.
     console.error('Failed to close position:', error)
+    return false
   } finally {
     closingPositions.value.delete(positionKey)
   }
@@ -163,7 +166,8 @@ const handlePartialClose = async (position: BrokerPosition, percentage: number) 
       quantity: position.quantity > 0 ? quantityToClose : -quantityToClose
     }
 
-    await positionClosingHandler(partialPosition, position.broker as unknown as Record<string, unknown>)
+    // partial = true: keep the remaining position's SL/target and re-arm it.
+    await positionClosingHandler(partialPosition, position.broker as unknown as Record<string, unknown>, true)
 
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
@@ -203,9 +207,14 @@ const standardQuoteHandler = createQuoteUpdateHandler({
   positionLtps: positionLtps,
   stopLossEnabled: () => stopLossEnabled.value,
   targetEnabled: () => targetEnabled.value,
-  checkTriggers: (position: BrokerPosition, ltp: number, triggerKey?: string) => {
+  checkTriggers: (
+    position: BrokerPosition,
+    ltp: number,
+    triggerKey?: string,
+    opts?: { checkStopLoss?: boolean; checkTarget?: boolean },
+  ) => {
     const key = triggerKey || getTriggerKey(position)
-    return checkTriggers(position as Position, ltp, key)
+    return checkTriggers(position as Position, ltp, key, opts)
   },
   setTriggers,
   updatePosition: async (symbol: string, updates: Record<string, unknown>, broker?: { id: string }) => {
@@ -469,45 +478,98 @@ const calculateLotAdjustedQuantity = (totalQuantity: number, percentage: number,
   return Math.floor(baseQuantityToClose / lotSize) * lotSize
 }
 
+// --- increment/decrement helpers ---------------------------------------------
+const getPositionLtpValue = (position: BrokerPosition): number => {
+  const symbolKey = `${position.exchange}|${position.token}`
+  return positionLtps.value[symbolKey] ?? positionLtps.value[position.token] ?? position.lastTradedPrice ?? 0
+}
+
+// Keep a stop-loss on the protective side of the LTP (below for longs, above for
+// shorts) so the +/- buttons can never accidentally push it past the price and
+// cause an instant stop-out. Returns null if there is no valid room.
+const clampStopLoss = (position: BrokerPosition, value: number): number | null => {
+  const tick = position.tickSize || 0.05
+  const ltp = getPositionLtpValue(position)
+  if (!ltp || ltp <= 0) return Math.max(tick, value)
+  if (position.quantity > 0) {
+    const max = ltp - tick
+    if (max <= 0) return null
+    return Math.min(Math.max(tick, value), max)
+  }
+  return Math.max(ltp + tick, value)
+}
+
+// Keep a target on the profit side of the LTP (above for longs, below for shorts).
+const clampTarget = (position: BrokerPosition, value: number): number | null => {
+  const tick = position.tickSize || 0.05
+  const ltp = getPositionLtpValue(position)
+  if (!ltp || ltp <= 0) return Math.max(tick, value)
+  if (position.quantity > 0) {
+    return Math.max(ltp + tick, value)
+  }
+  const max = ltp - tick
+  if (max <= 0) return null
+  return Math.min(Math.max(tick, value), max)
+}
+
+// Setting a static stop-loss must clear trailing mode, and the change must be
+// persisted via setTriggers (nothing listens to the dispatched event) so it
+// survives a position refetch.
+const applyStopLoss = async (position: BrokerPosition, newValue: number) => {
+  const updates = { stopLoss: newValue, trailingStopLoss: null, trailingOffset: null }
+  await updatePosition(position.symbol, updates, position.broker)
+  setTriggers(getTriggerKey(position), updates)
+}
+
+const applyTarget = async (position: BrokerPosition, newValue: number) => {
+  const updates = { target: newValue }
+  await updatePosition(position.symbol, updates, position.broker)
+  setTriggers(getTriggerKey(position), updates)
+}
+
 // New increment/decrement handlers
 const incrementStopLoss = async (position: BrokerPosition) => {
   if (!position.broker || !stopLossEnabled.value) return
 
   const currentValue = position.stopLoss || position.trailingStopLoss || 0
-  const increment = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
-  const newValue = currentValue + increment
+  const step = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
+  const newValue = clampStopLoss(position, currentValue + step)
+  if (newValue === null) return
 
-  await updatePosition(position.symbol, { stopLoss: newValue }, position.broker)
+  await applyStopLoss(position, newValue)
 }
 
 const decrementStopLoss = async (position: BrokerPosition) => {
   if (!position.broker || !stopLossEnabled.value) return
 
   const currentValue = position.stopLoss || position.trailingStopLoss || 0
-  const decrement = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
-  const newValue = Math.max(0.05, currentValue - decrement) // Don't go below 0.05
+  const step = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
+  const newValue = clampStopLoss(position, Math.max(0.05, currentValue - step))
+  if (newValue === null) return
 
-  await updatePosition(position.symbol, { stopLoss: newValue }, position.broker)
+  await applyStopLoss(position, newValue)
 }
 
 const incrementTarget = async (position: BrokerPosition) => {
   if (!position.broker || !targetEnabled.value) return
 
   const currentValue = position.target || 0
-  const increment = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
-  const newValue = currentValue + increment
+  const step = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
+  const newValue = clampTarget(position, currentValue + step)
+  if (newValue === null) return
 
-  await updatePosition(position.symbol, { target: newValue }, position.broker)
+  await applyTarget(position, newValue)
 }
 
 const decrementTarget = async (position: BrokerPosition) => {
   if (!position.broker || !targetEnabled.value) return
 
   const currentValue = position.target || 0
-  const decrement = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
-  const newValue = Math.max(0.05, currentValue - decrement) // Don't go below 0.05
+  const step = Math.max(0.05, currentValue * 0.01) // 1% or minimum 0.05
+  const newValue = clampTarget(position, Math.max(0.05, currentValue - step))
+  if (newValue === null) return
 
-  await updatePosition(position.symbol, { target: newValue }, position.broker)
+  await applyTarget(position, newValue)
 }
 
 // New method: toggle between trailing and static stoploss for a given position using factory

@@ -9,6 +9,7 @@ import {
   getDefaultStopLoss,
   getDefaultTarget,
 } from '@/modules/private/shared/composables/useStoplossTarget'
+import { useTriggerSettings } from '@/modules/private/shared/composables/useTriggerSettings'
 
 // Define props and emits
 const props = defineProps<{
@@ -652,9 +653,10 @@ useMouseScroll({
   values: orderTypes,
 })
 
-// Initialize stoploss/target settings locally
-const stopLossEnabled = ref(false)
-const targetEnabled = ref(false)
+// Reactive, persisted stoploss/target enable flags. Shared (module-level) with
+// the positions view via useTriggerSettings, so toggling the checkbox actually
+// enables the SL/target/trailing monitor (previously a throwaway local ref).
+const { stopLossEnabled, targetEnabled } = useTriggerSettings()
 
 // Sync stoploss/target enabled state locally
 watch(stopLossEnabled, (value) => {

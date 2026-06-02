@@ -69,6 +69,15 @@ export function useTriggerCoordination() {
       return false
     }
 
+    // Stand down if any individual position trigger is mid-close. This prevents an
+    // MTM-level close-all from racing a per-position stop/target close on the same
+    // position (which could double the exit order and flip the position).
+    cleanupStaleExecutions()
+    if (activeExecutions.size > 0) {
+      logger.debug(`🚫 [${triggerSource}] Trigger blocked - position close in progress`)
+      return false
+    }
+
     // Check debounce period as secondary safeguard
     if (now - lastTriggerTime.value < TRIGGER_DEBOUNCE_MS) {
       logger.debug(`🚫 [${triggerSource}] Trigger blocked - within debounce period`)

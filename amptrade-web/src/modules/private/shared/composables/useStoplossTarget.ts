@@ -55,6 +55,8 @@ export const isIndexOptionWithCustomSettings = _isIndexOptionWithCustomSettings
 interface TriggerValues {
   stopLoss: number | null
   target: number | null
+  trailingStopLoss?: number | null
+  trailingOffset?: number | null
   lastTrigger?: 'stopLoss' | 'target'
   pendingOrderId?: string
   isClosing?: boolean
@@ -116,7 +118,18 @@ export function useStoplossTarget() {
     saveTriggers(triggerValues.value)
   }
 
-  const checkTriggers = async (position: Position, currentLtp: number, triggerKey?: string) => {
+  const checkTriggers = async (
+    position: Position,
+    currentLtp: number,
+    triggerKey?: string,
+    opts: { checkStopLoss?: boolean; checkTarget?: boolean } = {},
+  ) => {
+    // Respect the per-feature enable flags. The caller may have entered this code
+    // path because *target* monitoring is on; if so we must NOT also fire a
+    // stop-loss that the user has disabled (and vice versa).
+    const checkStopLoss = opts.checkStopLoss !== false
+    const checkTarget = opts.checkTarget !== false
+
     // Use the provided triggerKey if available, otherwise use position.symbol
     const lookupKey = triggerKey || position.symbol
     const triggers = triggerValues.value[lookupKey] || {}
@@ -139,16 +152,19 @@ export function useStoplossTarget() {
     if (triggers.lastTrigger) return null
 
     try {
-      // Use the trailing stoploss if enabled; otherwise, use the static stopLoss
+      // Use the trailing stoploss if set; otherwise, use the static stopLoss.
+      // NOTE: `!= null` (not `!== null`) so that an `undefined` trailing value
+      // falls through to the static stop instead of becoming NaN and silently
+      // disabling the stop-loss.
       const effectiveStopLoss =
-        position.trailingStopLoss !== null ? position.trailingStopLoss : position.stopLoss
+        position.trailingStopLoss != null ? position.trailingStopLoss : position.stopLoss
       const target = position.target
       const isLong = position.quantity > 0
 
       // Ensure numeric values
       const numericLtp = Number(currentLtp)
-      const numericStopLoss = effectiveStopLoss !== null ? Number(effectiveStopLoss) : null
-      const numericTarget = target !== null ? Number(target) : null
+      const numericStopLoss = effectiveStopLoss != null ? Number(effectiveStopLoss) : null
+      const numericTarget = target != null ? Number(target) : null
 
       // console.log('Checking triggers (numeric):', {
       //   symbol: position.symbol,
@@ -159,25 +175,23 @@ export function useStoplossTarget() {
       //   isLong,
       // })
 
-      if (numericStopLoss !== null) {
+      if (checkStopLoss && numericStopLoss !== null && Number.isFinite(numericStopLoss)) {
         if (
           (isLong && numericLtp <= numericStopLoss) ||
           (!isLong && numericLtp >= numericStopLoss)
         ) {
-          setTriggers(lookupKey, {
-            lastTrigger: 'stopLoss',
-            isClosing: true,
-          })
+          // Mark as closing to dedupe concurrent ticks, but do NOT set
+          // `lastTrigger` here: that permanently disarms the stop. The close
+          // pipeline records `lastTrigger` only after the exit order is placed,
+          // and `isClosing` is cleared if the close fails so the stop re-arms.
+          setTriggers(lookupKey, { isClosing: true })
           return { type: 'stopLoss', price: numericLtp }
         }
       }
 
-      if (numericTarget !== null) {
+      if (checkTarget && numericTarget !== null && Number.isFinite(numericTarget)) {
         if ((isLong && numericLtp >= numericTarget) || (!isLong && numericLtp <= numericTarget)) {
-          setTriggers(lookupKey, {
-            lastTrigger: 'target',
-            isClosing: true,
-          })
+          setTriggers(lookupKey, { isClosing: true })
           return { type: 'target', price: numericLtp }
         }
       }
@@ -198,9 +212,11 @@ export function useStoplossTarget() {
     const currentTriggers = { ...triggerValues.value }
     let modified = false
 
-    // Remove all trigger keys that contain this symbol
+    // Remove all trigger keys for this symbol. Match the symbol as a delimited
+    // key segment (keys are `...|symbol|token|...`) rather than a loose substring,
+    // so we don't accidentally clear unrelated symbols that share a prefix.
     for (const key of Object.keys(currentTriggers)) {
-      if (key.includes(symbol)) {
+      if (key.split('|').includes(symbol)) {
         logger.debug('Removing trigger key:', key)
         delete currentTriggers[key]
         modified = true

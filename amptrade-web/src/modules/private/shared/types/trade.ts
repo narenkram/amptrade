@@ -67,6 +67,9 @@ export interface Position {
   target: number | null
   stopLoss: number | null
   trailingStopLoss: number | null
+  // Distance (in rupees) the trailing stop keeps behind price; captured when
+  // trailing is first armed so the gap is preserved instead of snapping to a default.
+  trailingOffset?: number | null
   lotSize?: number
   freezeQuantity?: number
   tickSize?: number // Minimum price increment for the instrument (ti)
@@ -80,6 +83,7 @@ export interface PositionUpdate {
   stopLoss?: number | null
   target?: number | null
   trailingStopLoss?: number | null
+  trailingOffset?: number | null
   [key: string]: unknown
 }
 

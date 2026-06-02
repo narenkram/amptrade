@@ -1,3 +1,17 @@
+/**
+ * ============================================================================
+ * DESIGN NOTE: stop-loss / target / trailing / MTM execution is CLIENT-SIDE.
+ * ============================================================================
+ * This engine monitors positions in the browser, tick-driven via the
+ * `quote-update` WebSocket event, and market-closes a position when a trigger
+ * is hit. There are intentionally NO broker-resting SL/SL-M orders and NO
+ * server-side monitor — this is a deliberate product design choice.
+ *
+ * Consequence (by design, not a bug): triggers only fire while the tab is open,
+ * focused enough to process events, and the feed is live. Keep the client-side
+ * path correct; do not move execution server-side unless the product owner asks.
+ * ============================================================================
+ */
 import {
   getDefaultStopLoss,
   getDefaultTarget,

@@ -26,8 +26,43 @@ A comprehensive reference of all column headers/field names used by each broker'
 ---
 
 ## Dhan
-**Format**: CSV with headers  
-**Source**: Dhan API
+**Format**: REST API  
+**Source**: `https://api.dhan.co/v2`
+
+### API Authentication
+- **Endpoint**: `POST /dhan/generateToken`
+- **Parameters**: 
+  - `client_id`: Your Dhan client ID
+  - `access_token`: Your Dhan API access token
+- **Response**: Stores credentials for subsequent API calls
+
+### Supported API Endpoints (via amptrade)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/dhan/generateToken` | POST | Authenticate Dhan account |
+| `/dhan/fundLimit` | GET | Get margin and fund limits |
+| `/dhan/getPositionBook` | GET | Get open positions |
+| `/dhan/getOrdersAndTrades` | GET | Get orders and trade history |
+| `/dhan/placeOrder` | POST | Place a new order |
+| `/dhan/cancelOrder` | POST | Cancel an existing order |
+| `/dhan/modifyOrder` | PUT | Modify an existing order |
+
+### Order Parameters
+
+| Parameter | Type | Description | Values |
+|-----------|------|-------------|--------|
+| `security_id` | string | Dhan security ID | e.g., "12345" |
+| `exchange_segment` | string | Exchange | NSE, BSE, NFO, BFO, MCX |
+| `transaction_type` | string | Buy/Sell | BUY, SELL |
+| `quantity` | number | Order quantity | e.g., 1 |
+| `order_type` | string | Order type | MARKET, LIMIT, STOP_LOSS, STOP_LOSS_MARKET |
+| `product_type` | string | Product type | CNC, INTRA, MARGIN, CO, BO |
+| `price` | number | Price (for limit orders) | e.g., 100.50 |
+| `trigger_price` | number | Trigger price (for stop loss) | e.g., 95.00 |
+| `validity` | string | Order validity | DAY, IOC |
+
+### Field Mappings
 
 | Column Name | Description |
 |-------------|-------------|
@@ -45,6 +80,12 @@ A comprehensive reference of all column headers/field names used by each broker'
 | `SEM_TICK_SIZE` | Tick size |
 | `SM_SYMBOL_NAME` | Symbol name |
 | `SEM_EXCH_INSTRUMENT_TYPE` | Exchange instrument type |
+
+### Integration Notes
+- Dhan broker is registered at routes `/dhan` and `/Dhan` (capitalized for compatibility)
+- Uses REST API instead of NorenAPI like other brokers
+- Credentials are stored in `StoredCredentials` object after authentication
+- All order operations require prior token generation via `/generateToken`
 
 ---
 
@@ -296,4 +337,17 @@ A comprehensive reference of all column headers/field names used by each broker'
 
 *Angel One strike price is in paise (divide by 100)
 
+---
 
+## AmpTrade Broker Integration Status
+
+| Broker | Status | Type | Route |
+|--------|--------|------|-------|
+| Zerodha | ✅ Active | Custom API | `/zerodha`, `/Zerodha` |
+| Upstox | ✅ Active | Custom API | `/upstox`, `/Upstox` |
+| **Dhan** | ✅ **Active** | **Custom API** | **/dhan**, **/Dhan** |
+| Shoonya | ✅ Active | NorenAPI | `/shoonya` |
+| Zebu | ✅ Active | NorenAPI | `/zebu` |
+| Tradesmart | ✅ Active | NorenAPI | `/tradesmart` |
+| Infinn | ✅ Active | NorenAPI | `/infinn` |
+| Flattrade | ✅ Active | NorenAPI | `/flattrade` |

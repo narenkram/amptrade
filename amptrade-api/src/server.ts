@@ -18,6 +18,7 @@ import { createNorenBrokerRouter } from "./routes/norenBrokerRoutes";
 // Non-NorenAPI broker routes (different API architecture)
 import zerodhaRouter from "./routes/zerodha";
 import upstoxRouter from "./routes/upstox";
+import dhanRouter from "./routes/dhan";
 // Other routes
 import instrumentsRouter from "./routes/instruments/index";
 import healthRouter from "./routes/health";
@@ -55,6 +56,8 @@ app.use("/zerodha", zerodhaRouter(storedCredentials));
 app.use("/Zerodha", zerodhaRouter(storedCredentials)); // Capitalized for broker.type compatibility
 app.use("/upstox", upstoxRouter(storedCredentials));
 app.use("/Upstox", upstoxRouter(storedCredentials)); // Capitalized for broker.type compatibility
+app.use("/dhan", dhanRouter(storedCredentials));
+app.use("/Dhan", dhanRouter(storedCredentials)); // Capitalized for broker.type compatibility
 
 // Other protected routes
 app.use("/instruments", instrumentsRouter());
